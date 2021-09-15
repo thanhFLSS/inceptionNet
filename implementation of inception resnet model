@@ -1,0 +1,116 @@
+the data used in the notebook are cifar10 dataset
+#import necesary library
+import tensorflow as tf
+from tensorflow.keras import layers as L, optimizers as Opt, models as M,losses as Loss, initializers as Init, applications as App, datasets
+from tensorflow.data import Dataset
+from sklearn.model_selection import train_test_split
+
+
+#dowload dataset
+(x_train,y_train),(x_test,y_test) = datasets.cifar10.load_data()
+
+
+#create training and evaluate datasets
+x_train,x_val,y_train,y_val = train_test_split(x_train,y_train, stratify=y_train)
+
+def create_ds(x,y,batch_size=32,training=True):
+  def preprocessing(img, label):
+      img=tf.cast(img, dtype = tf.float32)
+      resized = tf.image.resize(img, size=(256,256))
+      rescaled =resized/255
+      one_hot = tf.one_hot(label,depth=10)
+      return rescaled , one_hot[0]
+  ds = Dataset.from_tensor_slices((x,y))
+  ds = (ds.map(preprocessing, num_parallel_calls=tf.data.AUTOTUNE).shuffle(128,reshuffle_each_iteration=training).batch(batch_size).prefetch(tf.data.AUTOTUNE))
+  return ds
+
+train_ds = create_ds(x_train,y_train)
+val_ds = create_ds(x_val,y_val)
+
+#create model
+
+#inception block for resnet
+def incept_block(prev, config):
+    conv1 = L.Conv2D(filters=config['n_conv1'], kernel_size=(1,1), activation='relu',
+                     padding='same', kernel_initializer=Init.HeUniform())(prev)
+    # =======
+    conv3 = L.Conv2D(filters=config['n_conv3_reduce'], kernel_size=(1,1),
+                     padding='same', kernel_initializer=Init.HeUniform())(prev)
+    conv3 = L.Conv2D(filters=config['n_conv3'], kernel_size=(3,3), activation='relu',
+                     padding='same', kernel_initializer=Init.HeUniform())(conv3)
+    # =======
+    conv5 = L.Conv2D(filters=config['n_conv5_reduce'], kernel_size=(1,1),
+                     padding='same', kernel_initializer=Init.HeUniform())(prev)
+    conv5 = L.Conv2D(filters=config['n_conv5'], kernel_size=(5,5), activation='relu',
+                     padding='same', kernel_initializer=Init.HeUniform())(conv5)
+    # =======
+    max_pool = L.MaxPool2D(pool_size=(3,3), padding='same', strides=1)(prev)
+    pool_proj = L.Conv2D(filters=config['n_pool_proj'], kernel_size=(1,1), 
+                     padding='same', kernel_initializer=Init.HeUniform())(max_pool)
+    concat = L.Concatenate()([conv1, conv3, conv5, pool_proj])
+    return concat
+
+#resnet funcction
+  def resnet_block(input,config):
+  input = L.ReLU()(input)
+  incept = incept_block(input,config)
+  prev = input.get_shape()
+  cur = incept.get_shape()
+  if prev == cur :
+    features = L.Add()[incept,input] 
+  else:
+    filter_add = cur[-1]
+    input = L.Conv2D(filters= filter_add, kernel_size=(1,1),padding='same',)(input)
+    features = L.Add()([incept,input])
+    print(filter_add)
+  return features
+  
+  
+#data processing before inceptionResnet
+  def pre_incepttionResnet(train):
+  features = L.Conv2D(filters=64, kernel_size=(7,7),padding='same', activation='relu')(train)
+  features = L.MaxPool2D( pool_size=(3,3), strides=None, padding='same', data_format=None,)(features)
+  features = L.Lambda(tf.nn.local_response_normalization)(features)
+  features = L.Conv2D(filters=128, kernel_size=(1,1),padding='same', activation='relu')(features)
+  features = L.Conv2D(filters=192, kernel_size=(3,3),padding='same', activation='relu')(features)
+  features = L.Lambda(tf.nn.local_response_normalization)(features)
+  features = L.MaxPool2D( pool_size=(3,3), strides=None, padding='same', data_format=None,)(features)
+  return features
+  
+  
+  def features_process(input):
+  x = pre_incepttionResnet(input)
+  for config in configs_3:
+    x = resnet_block(x, config)
+  max_pool1 = L.MaxPool2D(pool_size=(3,3))(x)
+
+  for config in configs_4:
+    x = resnet_block(x, config)
+  max_pool2 = L.MaxPool2D(pool_size=(3,3))(x)
+  return max_pool2
+  
+#final model
+  he_uniform = Init.HeUniform()
+images = L.Input(shape=(256, 256, 3,))
+features = features_process(images)
+features = L.GlobalAveragePooling2D()(features)
+outputs = L.Dense(1024, activation='relu', kernel_initializer=he_uniform)(features)
+outputs = L.Dropout(0.25)(outputs)
+outputs = L.Dense(512, activation='relu', kernel_initializer=he_uniform)(outputs)
+outputs = L.Dropout(0.25)(outputs)
+outputs = L.Dense(10, activation='softmax', kernel_initializer=he_uniform)(outputs)
+
+# create and inspect number of parameter
+model = M.Model(inputs=images, outputs=outputs)
+model.summary()
+
+
+#compiling
+model.compile(
+    loss='categorical_crossentropy', 
+    optimizer=Opt.Adam(learning_rate=0.0001),
+    metrics=['acc'])
+
+#run model and inspect the result
+results = model.fit(train_ds, validation_data=val_ds, epochs=50)
+plot_model(model,'model.png',show_shapes=True)
