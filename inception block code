@@ -1,0 +1,29 @@
+#create inceptionNet block 
+def incept_block(prev, config):
+    conv1 = L.Conv2D(filters=config['n_conv1'], kernel_size=(1,1), activation='relu',
+                     padding='same', kernel_initializer=Init.HeUniform())(prev)
+    # =======
+    conv3 = L.Conv2D(filters=config['n_conv3_reduce'], kernel_size=(1,1),
+                     padding='same', kernel_initializer=Init.HeUniform())(prev)
+    conv3 = L.Conv2D(filters=config['n_conv3'], kernel_size=(3,3), activation='relu',
+                     padding='same', kernel_initializer=Init.HeUniform())(conv3)
+    # =======
+    conv5 = L.Conv2D(filters=config['n_conv5_reduce'], kernel_size=(1,1),
+                     padding='same', kernel_initializer=Init.HeUniform())(prev)
+    conv5 = L.Conv2D(filters=config['n_conv5'], kernel_size=(5,5), activation='relu',
+                     padding='same', kernel_initializer=Init.HeUniform())(conv5)
+    # =======
+    max_pool = L.MaxPool2D(pool_size=(3,3), padding='same', strides=1)(prev)
+    pool_proj = L.Conv2D(filters=config['n_pool_proj'], kernel_size=(1,1), 
+                     padding='same', kernel_initializer=Init.HeUniform())(max_pool)
+    concat = L.Concatenate()([conv1, conv3, conv5, pool_proj])
+    return concat
+
+#the config matrix are used here to alter the number of filters in each conv2d layer after each time going through the inception block
+  configs = [
+    { 'n_conv1': 192, 'n_conv3_reduce': 96, 'n_conv3': 208, 'n_conv5_reduce': 16, 'n_conv5': 48, 'n_pool_proj': 64 },           
+    { 'n_conv1': 160, 'n_conv3_reduce': 112, 'n_conv3': 224, 'n_conv5_reduce': 24, 'n_conv5': 64, 'n_pool_proj': 64 },
+    { 'n_conv1': 128, 'n_conv3_reduce': 128, 'n_conv3': 256, 'n_conv5_reduce': 24, 'n_conv5': 64, 'n_pool_proj': 64 },
+    { 'n_conv1': 112, 'n_conv3_reduce': 144, 'n_conv3': 288, 'n_conv5_reduce': 32, 'n_conv5': 64, 'n_pool_proj': 64 },
+    { 'n_conv1': 256, 'n_conv3_reduce': 160, 'n_conv3': 320, 'n_conv5_reduce': 32, 'n_conv5': 128, 'n_pool_proj': 128 },
+]
