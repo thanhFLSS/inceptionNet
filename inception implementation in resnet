@@ -1,0 +1,35 @@
+#create the inception block
+def incept_block(prev, config):
+    conv1 = L.Conv2D(filters=config['n_conv1'], kernel_size=(1,1), activation='relu',
+                     padding='same', kernel_initializer=Init.HeUniform())(prev)
+    # =======
+    conv3 = L.Conv2D(filters=config['n_conv3_reduce'], kernel_size=(1,1),
+                     padding='same', kernel_initializer=Init.HeUniform())(prev)
+    conv3 = L.Conv2D(filters=config['n_conv3'], kernel_size=(3,3), activation='relu',
+                     padding='same', kernel_initializer=Init.HeUniform())(conv3)
+    # =======
+    conv5 = L.Conv2D(filters=config['n_conv5_reduce'], kernel_size=(1,1),
+                     padding='same', kernel_initializer=Init.HeUniform())(prev)
+    conv5 = L.Conv2D(filters=config['n_conv5'], kernel_size=(5,5), activation='relu',
+                     padding='same', kernel_initializer=Init.HeUniform())(conv5)
+    # =======
+    max_pool = L.MaxPool2D(pool_size=(3,3), padding='same', strides=1)(prev)
+    pool_proj = L.Conv2D(filters=config['n_pool_proj'], kernel_size=(1,1), 
+                     padding='same', kernel_initializer=Init.HeUniform())(max_pool)
+    concat = L.Concatenate()([conv1, conv3, conv5, pool_proj])
+    return concat
+
+#call the inception architecture in resnet function 
+  def resnet_block(input,config):
+  input = L.ReLU()(input)
+  incept = incept_block(input,config)
+  prev = input.get_shape()
+  cur = incept.get_shape()
+  if prev == cur :
+    features = L.Add()[incept,input] 
+  else:
+    filter_add = cur[-1]
+    input = L.Conv2D(filters= filter_add, kernel_size=(1,1),padding='same',)(input)
+    features = L.Add()([incept,input])
+    print(filter_add)
+  return features
